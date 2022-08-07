@@ -2356,13 +2356,12 @@ rec {
     fuchsia = true;
     test = false;
 
-    # This doesn't appear to be officially documented anywhere yet.
-    # See https://github.com/rust-lang-nursery/rust-forge/issues/101.
-    os =
-      if platform.isDarwin
-      then "macos"
-      else platform.parsed.kernel.name;
-    arch = platform.parsed.cpu.name;
+    /* We are choosing an arbitrary rust version to grab `lib` from,
+      which is unfortunate, but `lib` has been version-agnostic the
+      whole time so this is good enough for now.
+    */
+    os = pkgs.rust.lib.toTargetOs platform;
+    arch = pkgs.rust.lib.toTargetArch platform;
     family = "unix";
     env = "gnu";
     endian =
@@ -2631,16 +2630,19 @@ rec {
                 dependencies = crateConfig.buildDependencies or [ ];
               };
             dependenciesWithRenames =
-              lib.filter (d: d ? "rename")
-                (filterEnabledDependencies {
-                  inherit features;
-                  inherit (self.build) target;
-                  dependencies = crateConfig.buildDependencies or [ ];
-                } ++ filterEnabledDependencies {
+              let
+                buildDeps = filterEnabledDependencies {
                   inherit features;
                   inherit (self) target;
                   dependencies = crateConfig.dependencies or [ ] ++ devDependencies;
-                });
+                };
+                hostDeps = filterEnabledDependencies {
+                  inherit features;
+                  inherit (self.build) target;
+                  dependencies = crateConfig.buildDependencies or [ ];
+                };
+              in
+              lib.filter (d: d ? "rename") (hostDeps ++ buildDeps);
             # Crate renames have the form:
             #
             # {
