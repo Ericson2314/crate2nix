@@ -1,9 +1,0 @@
-[package]
-name = "bin_with_lib_git_dep"
-version = "0.1.0"
-authors = ["Peter Kolloch <info@eigenvalue.net>"]
-edition = "2018"
-
-[dependencies.nix-base32]
-git = "https://github.com/kolloch/nix-base32"
-branch = "branch-for-test"

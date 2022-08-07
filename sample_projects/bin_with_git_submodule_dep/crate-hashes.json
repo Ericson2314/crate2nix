@@ -1,4 +1,0 @@
-{
-  "librocksdb-sys 6.2.4 (git+https://github.com/rust-rocksdb/rust-rocksdb#64bd09899306d23dfd1504465bd1e9adb15fb9ca)": "0mgawc86jxvbmgk66xq644mizh59vgb1i0a2f28knram4lch108f",
-  "rocksdb 0.13.0 (git+https://github.com/rust-rocksdb/rust-rocksdb#64bd09899306d23dfd1504465bd1e9adb15fb9ca)": "0mgawc86jxvbmgk66xq644mizh59vgb1i0a2f28knram4lch108f"
-}
