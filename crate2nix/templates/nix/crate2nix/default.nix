@@ -34,12 +34,12 @@ rec {
     os = pkgs.rust.lib.toTargetOs platform;
     arch = pkgs.rust.lib.toTargetArch platform;
     family = pkgs.rust.lib.toTargetFamily platform;
+    vendor = pkgs.rust.lib.toTargetVendor platform;
     env = "gnu";
     endian =
       if platform.parsed.cpu.significantByte.name == "littleEndian"
       then "little" else "big";
     pointer_width = toString platform.parsed.cpu.bits;
-    vendor = platform.parsed.vendor.name;
     debug_assertions = false;
   };
 
@@ -128,14 +128,14 @@ rec {
             inherit testCrateFlags;
             buildInputs = testInputs;
           } ''
-          set -ex
+          set -e
 
           export RUST_BACKTRACE=1
 
           # recreate a file hierarchy as when running tests with cargo
 
           # the source for test data
-          ${pkgs.xorg.lndir}/bin/lndir ${crate.src}
+          ${pkgs.buildPackages.xorg.lndir}/bin/lndir ${crate.src}
 
           # build outputs
           testRoot=target/debug
@@ -165,10 +165,12 @@ rec {
         passthru = (crate.passthru or { }) // {
           inherit test;
         };
-      } ''
-      echo tested by ${test}
-      ${lib.concatMapStringsSep "\n" (output: "ln -s ${crate.${output}} ${"$"}${output}") crate.outputs}
-    '';
+      }
+      (lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
+        echo tested by ${test}
+      '' + ''
+        ${lib.concatMapStringsSep "\n" (output: "ln -s ${crate.${output}} ${"$"}${output}") crate.outputs}
+      '');
 
   /* A restricted overridable version of builtRustCratesWithFeatures. */
   buildRustCrateWithFeatures =
@@ -332,13 +334,15 @@ rec {
                   let
                     package = crateConfigs."${dep.packageId}";
                   in
-                  { inherit (dep) rename; version = package.version; };
+                  { inherit (dep) rename; inherit (package) version; };
               in
-              lib.mapAttrs (name: choices: builtins.map versionAndRename choices) grouped;
+              lib.mapAttrs (name: builtins.map versionAndRename) grouped;
           in
           buildRustCrateForPkgsFunc pkgs
             (
               crateConfig // {
+                # https://github.com/NixOS/nixpkgs/issues/218712
+                dontStrip = stdenv.hostPlatform.isDarwin;
                 src = crateConfig.src or (
                   pkgs.fetchurl rec {
                     name = "${crateConfig.crateName}-${crateConfig.version}.tar.gz";
@@ -380,7 +384,7 @@ rec {
   */
   sanitizeForJson = val:
     if builtins.isAttrs val
-    then lib.mapAttrs (n: v: sanitizeForJson v) val
+    then lib.mapAttrs (n: sanitizeForJson) val
     else if builtins.isList val
     then builtins.map sanitizeForJson val
     else if builtins.isFunction val
@@ -489,7 +493,7 @@ rec {
         enabledFeatures = enableFeatures (crateConfig.dependencies or [ ]) expandedFeatures;
         depWithResolvedFeatures = dependency:
           let
-            packageId = dependency.packageId;
+            inherit (dependency) packageId;
             features = dependencyFeatures enabledFeatures dependency;
           in
           { inherit packageId features; };
@@ -583,10 +587,24 @@ rec {
     assert (builtins.isAttrs featureMap);
     assert (builtins.isList inputFeatures);
     let
-      expandFeature = feature:
-        assert (builtins.isString feature);
-        [ feature ] ++ (expandFeatures featureMap (featureMap."${feature}" or [ ]));
-      outFeatures = lib.concatMap expandFeature inputFeatures;
+      expandFeaturesNoCycle = oldSeen: inputFeatures:
+        if inputFeatures != [ ]
+        then
+          let
+            # The feature we're currently expanding.
+            feature = builtins.head inputFeatures;
+            # All the features we've seen/expanded so far, including the one
+            # we're currently processing.
+            seen = oldSeen // { ${feature} = 1; };
+            # Expand the feature but be careful to not re-introduce a feature
+            # that we've already seen: this can easily cause a cycle, see issue
+            # #209.
+            enables = builtins.filter (f: !(seen ? "${f}")) (featureMap."${feature}" or [ ]);
+          in
+          [ feature ] ++ (expandFeaturesNoCycle seen (builtins.tail inputFeatures ++ enables))
+        # No more features left, nothing to expand to.
+        else [ ];
+      outFeatures = expandFeaturesNoCycle { } inputFeatures;
     in
     sortedUnique outFeatures;
 

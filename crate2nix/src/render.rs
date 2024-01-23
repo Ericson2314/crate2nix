@@ -176,7 +176,7 @@ fn cfg_to_nix_expr_filter(
             if key.starts_with("cfg(") && key.ends_with(')') {
                 let cfg = &key[4..key.len() - 1];
 
-                let expr = CfgExpr::from_str(&cfg).map_err(|e| {
+                let expr = CfgExpr::from_str(cfg).map_err(|e| {
                     tera::Error::msg(format!(
                         "cfg_to_nix_expr_filter: Could not parse '{}': {}",
                         cfg, e
@@ -224,7 +224,7 @@ fn cfg_to_nix_expr(cfg: &CfgExpr) -> String {
                 } else if key == "target_family" {
                     format!("(builtins.elem {} target.{})", escaped_value, target(key))
                 } else {
-                    format!("({} == target.{})", escaped_value, target(key))
+                    format!("({} == target.{} or null)", escaped_value, target(key))
                 });
             }
             CfgExpr::Not(expr) => {
@@ -233,22 +233,30 @@ fn cfg_to_nix_expr(cfg: &CfgExpr) -> String {
                 result.push(')');
             }
             CfgExpr::All(expressions) => {
-                result.push('(');
-                render(result, &expressions[0]);
-                for expr in &expressions[1..] {
-                    result.push_str(" && ");
-                    render(result, expr);
+                if expressions.is_empty() {
+                    result.push_str("true");
+                } else {
+                    result.push('(');
+                    render(result, &expressions[0]);
+                    for expr in &expressions[1..] {
+                        result.push_str(" && ");
+                        render(result, expr);
+                    }
+                    result.push(')');
                 }
-                result.push(')');
             }
             CfgExpr::Any(expressions) => {
-                result.push('(');
-                render(result, &expressions[0]);
-                for expr in &expressions[1..] {
-                    result.push_str(" || ");
-                    render(result, expr);
+                if expressions.is_empty() {
+                    result.push_str("false");
+                } else {
+                    result.push('(');
+                    render(result, &expressions[0]);
+                    for expr in &expressions[1..] {
+                        result.push_str(" || ");
+                        render(result, expr);
+                    }
+                    result.push(')');
                 }
-                result.push(')');
             }
         }
     }
@@ -284,21 +292,23 @@ fn test_render_cfg_to_nix_expr() {
         &cfg_to_nix_expr(&kv("target_family", "unix"))
     );
     assert_eq!(
-        "(\"linux\" == target.\"os\")",
+        "(\"linux\" == target.\"os\" or null)",
         &cfg_to_nix_expr(&kv("target_os", "linux"))
     );
     assert_eq!(
-        "(!(\"linux\" == target.\"os\"))",
+        "(!(\"linux\" == target.\"os\" or null))",
         &cfg_to_nix_expr(&CfgExpr::Not(Box::new(kv("target_os", "linux"))))
     );
     assert_eq!(
-        "((target.\"unix\" or false) || (\"linux\" == target.\"os\"))",
+        "((target.\"unix\" or false) || (\"linux\" == target.\"os\" or null))",
         &cfg_to_nix_expr(&CfgExpr::Any(vec![name("unix"), kv("target_os", "linux")]))
     );
     assert_eq!(
-        "((target.\"unix\" or false) && (\"linux\" == target.\"os\"))",
+        "((target.\"unix\" or false) && (\"linux\" == target.\"os\" or null))",
         &cfg_to_nix_expr(&CfgExpr::All(vec![name("unix"), kv("target_os", "linux")]))
     );
+    assert_eq!("true", &cfg_to_nix_expr(&CfgExpr::All(vec![])));
+    assert_eq!("false", &cfg_to_nix_expr(&CfgExpr::Any(vec![])));
 }
 
 /// Escapes a string as a nix string.

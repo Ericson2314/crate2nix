@@ -1,6 +1,6 @@
 //! Managing the `crate2nix.json` config.
 
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -8,7 +8,6 @@ use std::{
     fs::File,
     io::{BufReader, BufWriter},
     path::{Path, PathBuf},
-    str::FromStr,
 };
 
 impl Config {
@@ -64,8 +63,8 @@ impl Config {
 
         let max_len = self
             .sources
-            .iter()
-            .map(|(n, _)| n.len())
+            .keys()
+            .map(|n| n.len())
             .max()
             .unwrap_or_default();
         for (name, source) in &self.sources {
@@ -100,7 +99,6 @@ pub enum Source {
         /// The URL of the git repository.
         ///
         /// E.g. https://github.com/kolloch/crate2nix.git
-        #[serde(with = "url_serde")]
         url: url::Url,
         /// The revision hash.
         rev: String,
